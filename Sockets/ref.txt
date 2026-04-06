@@ -1,0 +1,139 @@
+============================================================
+  Socket Templates  |  File Reference
+============================================================
+
+
+
+============================================================
+1 — TCP Single-Shot (one request, one response)
+------------------------------------------------------------
+  tcp_single_server.py   TCP server on port 9000.
+                         Accepts one client at a time.
+                         Receives data, runs handle(),
+                         sends result, closes connection.
+
+  tcp_single_client.py   Connects, sends data from prepare(),
+                         prints reply, disconnects.
+
+  Customize:
+    server  →  edit handle(data) to change processing logic
+    client  →  edit prepare() to change what gets sent
+
+  Covers:
+    addition server, reverse string, swap case,
+    any single request-response problem
+
+  How to run:
+    Terminal 1:  python tcp_single_server.py
+    Terminal 2:  python tcp_single_client.py
+
+============================================================
+2 — TCP Loop (threaded, multi-client, persistent connection)
+------------------------------------------------------------
+  tcp_loop_server.py   TCP server on port 9001.
+                       Spawns a thread per client.
+                       Each client stays connected and
+                       sends multiple messages. handle()
+                       processes each message.
+
+  tcp_loop_client.py   Connects and sends multiple messages
+                       via prepare(). Type 'exit' to quit.
+
+  Customize:
+    server  →  edit handle(data) to change processing logic
+    client  →  edit prepare() to change input method
+
+  Covers:
+    chat server, text messaging, multi-client reverse,
+    any keep-alive interactive problem
+
+  How to run:
+    Terminal 1:  python tcp_loop_server.py
+    Terminal 2:  python tcp_loop_client.py
+    Terminal 3:  python tcp_loop_client.py  (simultaneous)
+
+============================================================
+3 — TCP File Transfer (upload/download)
+------------------------------------------------------------
+  tcp_file_server.py   TCP server on port 9002.
+                       Receives filename + binary data.
+                       on_receive() saves to uploads/.
+
+  tcp_file_client.py   Sends file via get_file().
+                       Usage: python tcp_file_client.py <path>
+                       Or run without args for interactive.
+
+  Customize:
+    server  →  edit on_receive(filename, data)
+    client  →  edit get_file() to change file selection
+
+  Covers:
+    file upload, file download, binary transfer
+
+  How to run:
+    Terminal 1:  python tcp_file_server.py
+    Terminal 2:  python tcp_file_client.py somefile.txt
+    Check:       ls uploads/
+
+============================================================
+4 — UDP Single-Shot (one datagram, one reply)
+------------------------------------------------------------
+  udp_single_server.py   UDP server on port 9003.
+                         Receives datagram, runs handle(),
+                         sends result back. Connectionless.
+
+  udp_single_client.py   Sends datagram from prepare(),
+                         waits for reply with timeout.
+
+  Customize:
+    server  →  edit handle(data) to change processing logic
+    client  →  edit prepare() to change what gets sent
+
+  Covers:
+    UDP reverse, UDP swap case, UDP echo,
+    any single datagram problem
+
+  How to run:
+    Terminal 1:  python udp_single_server.py
+    Terminal 2:  python udp_single_client.py
+
+============================================================
+5 — UDP Periodic (heartbeat / ping style)
+------------------------------------------------------------
+  udp_periodic_server.py   UDP server on port 9004.
+                           Tracks sequence numbers, detects
+                           gaps (lost packets), handles
+                           client timeout.
+
+  udp_periodic_client.py   Sends COUNT datagrams at INTERVAL.
+                           Each packet has seq, timestamp,
+                           and payload from prepare(seq).
+
+  Customize:
+    server  →  edit handle(seq, payload, delay)
+    client  →  edit prepare(seq) for payload content
+               edit COUNT and INTERVAL constants
+
+  Covers:
+    heartbeat, ping, RTT measurement,
+    packet loss detection
+
+  How to run:
+    Terminal 1:  python udp_periodic_server.py
+    Terminal 2:  python udp_periodic_client.py
+
+============================================================
+
+  Quick Guide — Which Template?
+  ┌───────────────────────────┬───────────────────────┐
+  │ Question asks for...      │ Use template...       │
+  ├───────────────────────────┼───────────────────────┤
+  │ TCP, one request/reply    │ 1 — tcp_single        │
+  │ TCP, multiple messages    │ 2 — tcp_loop          │
+  │ TCP, multi-client threads │ 2 — tcp_loop          │
+  │ TCP, file send/receive    │ 3 — tcp_file          │
+  │ UDP, one datagram         │ 4 — udp_single        │
+  │ UDP, periodic/heartbeat   │ 5 — udp_periodic      │
+  └───────────────────────────┴───────────────────────┘
+
+============================================================
