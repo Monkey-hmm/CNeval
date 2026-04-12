@@ -1,0 +1,123 @@
+================================================================
+NS2 TOPOLOGY TEMPLATE — QUICK REFERENCE CHEAT SHEET
+================================================================
+
+STEP-BY-STEP: HOW TO SOLVE ANY TOPOLOGY QUESTION
+-------------------------------------------------
+1. Open template_topology.tcl
+2. Change SIM_NAME (line ~35) to "q1", "q7", etc.
+3. Count the nodes in the question → create that many set nX [$ns node] lines
+4. Copy every link from the question → one $ns duplex-link line each
+5. Choose traffic type (see table below)
+6. Run: ns your_file.tcl
+7. Run AWK scripts on the generated .tr file
+
+
+QUEUE TYPE TRANSLATION TABLE
+-----------------------------
+Question says     →   NS2 syntax
+────────────────────────────────
+DropTail          →   DropTail
+FIFO              →   DropTail   ← COMMON TRAP: FIFO is NOT a keyword in NS2
+RED               →   RED
+FQ / FairQueue    →   FQ
+CBQ               →   CBQ
+SFQ               →   SFQ
+
+
+LINK SYNTAX
+-----------
+$ns duplex-link  $nA $nB  <BW>  <delay>  <QueueType>
+
+BW examples    :  1Mb  2.5Mb  512Kb  10Mb
+Delay examples :  5ms  10ms   100ms
+Queue examples :  DropTail  RED  FQ
+
+
+TRAFFIC AGENT COMBINATIONS
+---------------------------
+Use Case              Agent pair              Application
+──────────────────────────────────────────────────────────
+Bulk file transfer     TCP + TCPSink           FTP
+Interactive terminal   TCP + TCPSink           Telnet
+Video/audio stream     UDP + Null              CBR
+Reachability / RTT     Ping (ICMPAgent)        —
+
+TEMPLATE SNIPPETS:
+
+# TCP/FTP  (srcNode → dstNode)
+set tcp  [new Agent/TCP]       ;  set sink [new Agent/TCPSink]
+$ns attach-agent $srcNode $tcp ;  $ns attach-agent $dstNode $sink
+$ns connect $tcp $sink
+set ftp [new Application/FTP] ;  $ftp attach-agent $tcp
+
+# UDP/CBR  (srcNode → dstNode)
+set udp  [new Agent/UDP]       ;  set null [new Agent/Null]
+$ns attach-agent $srcNode $udp ;  $ns attach-agent $dstNode $null
+$ns connect $udp $null
+set cbr [new Application/Traffic/CBR] ;  $cbr attach-agent $udp
+$cbr set rate_ 500k            ;  $cbr set packetSize_ 512
+
+# TCP/Telnet  (srcNode → dstNode)
+set tcp  [new Agent/TCP]       ;  set sink [new Agent/TCPSink]
+$ns attach-agent $srcNode $tcp ;  $ns attach-agent $dstNode $sink
+$ns connect $tcp $sink
+set telnet [new Application/Telnet] ;  $telnet attach-agent $tcp
+
+
+TRACE FILE COLUMN REFERENCE
+----------------------------
+$1   Event:  + enqueue | - dequeue | r receive | d drop
+$2   Time (seconds)
+$3   From node (integer)
+$4   To   node (integer)
+$5   Packet type: tcp / cbr / ack
+$6   Packet size (bytes)
+$7   Flags
+$8   Flow ID
+$9   Source address (node.port)
+$10  Destination address (node.port)
+$11  Sequence number
+$12  Unique packet ID
+
+
+AWK QUICK COMMANDS
+------------------
+Count packets at nodes   :  awk -f count_packets.awk       out_XX.tr
+Per-link throughput      :  awk -f throughput.awk           out_XX.tr
+Total (bottleneck) tput  :  awk -f total_throughput.awk     out_XX.tr
+TCP-only throughput      :  awk -f tcp_throughput.awk       out_XX.tr
+UDP-only throughput      :  awk -f udp_throughput.awk       out_XX.tr
+Per-packet delay + avg   :  awk -f delay.awk                out_XX.tr
+Save output to file      :  awk -f delay.awk out_XX.tr > result.txt
+
+
+NODE NUMBERING (important for AWK filters)
+------------------------------------------
+NS2 numbers nodes in the order you call [$ns node]:
+  First  set nA [$ns node]  →  node 0
+  Second set nB [$ns node]  →  node 1
+  Third  set nC [$ns node]  →  node 2
+  ... and so on
+
+In your AWK script, use these integers (0, 1, 2 …), NOT the
+variable names (nA, nB, nC). The variable names exist only in TCL.
+
+
+COMMON MISTAKES
+---------------
+1. Writing "FIFO" as the queue type → NS2 will error. Use DropTail.
+2. Forgetting to $ns connect agents after attach-agent.
+3. AWK script uses wrong node number → check creation order.
+4. Simulation end time shorter than traffic stop time → data loss.
+5. Opening .nam before simulation finishes → empty animation.
+
+
+FILES IN THIS TEMPLATE PACKAGE
+--------------------------------
+template_topology.tcl      ← START HERE for any new question
+solved_q1_sixnode.tcl      ← Fully solved: Q1 style (mixed queues)
+solved_q2_sixnode.tcl      ← Fully solved: Q2 style (RED + bottleneck)
+template_awk_analysis.awk  ← AWK analysis templates (all 4 tasks)
+CHEATSHEET.txt             ← This file
+================================================================
