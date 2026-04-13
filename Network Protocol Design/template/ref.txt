@@ -1,0 +1,273 @@
+================================================================
+  UDP MONITORING SYSTEM — TEMPLATE REFERENCE GUIDE
+================================================================
+
+FILES
+-----
+  udp_server_template.py    — server  (networking core + your hook)
+  udp_client_template.py    — client  (networking core + your hooks)
+  run_clients_template.py   — spawns multiple clients in parallel
+  worked_example.py         — complete vehicle telemetry example
+
+================================================================
+THE CORE IDEA
+================================================================
+
+Both templates are split into two zones:
+
+  NETWORKING CORE  ── untouched every time
+  YOUR LOGIC       ── the only part you rewrite per question
+
+The networking core handles:
+  - socket creation and binding
+  - binary pack / unpack
+  - sequence-number guard (drops stale / out-of-order packets)
+  - timestamping on arrival
+  - multi-client dispatch
+
+You only ever touch:
+  1. PACKET_FIELDS  — declare what data travels in each packet
+  2. on_packet()    — server: what to do with each received reading
+  3. init_state()   — client: starting values that persist across sends
+  4. get_readings() — client: produce one set of sensor values per tick
+
+
+================================================================
+STEP-BY-STEP: HOW TO SOLVE A NEW QUESTION
+================================================================
+
+STEP 1 — READ THE QUESTION, LIST THE DATA FIELDS
+  Write down every piece of data the client must send.
+  For each field pick a struct format character:
+
+    Integers
+      B   unsigned  8-bit   0 – 255
+      H   unsigned 16-bit   0 – 65,535
+      I   unsigned 32-bit   0 – 4,294,967,295
+      b   signed    8-bit  -128 – 127
+      h   signed   16-bit  -32,768 – 32,767
+      i   signed   32-bit  large signed range
+
+    Real numbers
+      f   float 32-bit   ~7 significant digits   (good for GPS, speed)
+      d   float 64-bit   ~15 significant digits  (high-precision coords)
+
+    Rule of thumb:
+      GPS coordinates        → f  (float32 gives ~1 m precision)
+      Speed / temperature    → f  or H  (int if no decimal needed)
+      Counters / IDs         → I  (uint32)
+      Flags / small integers → B  (uint8)
+      Sequence number        → always I
+
+  ALWAYS include client_id (I) and seq (I) as the first two fields.
+  The networking core depends on them by name — do not rename them.
+
+
+STEP 2 — FILL IN PACKET_FIELDS (both files, identically)
+
+  PACKET_FIELDS = [
+      ("client_id",   "I"),   # required — do not remove
+      ("seq",         "I"),   # required — do not remove
+      ("your_field1", "f"),
+      ("your_field2", "H"),
+      ...
+  ]
+
+  The list must be identical in server and client.
+  Order matters — it defines the binary layout.
+
+
+STEP 3 — SERVER: write on_packet()
+
+  def on_packet(pkt: dict, addr: tuple):
+      # pkt is a plain dict, keys = your field names + "_ts"
+      # "_ts" is the server-side receive timestamp (float, unix epoch)
+
+      # Access any field by name:
+      #   pkt["latitude"], pkt["speed"], pkt["client_id"], etc.
+
+      # Common patterns:
+
+      # Print a summary line
+      print(f"Client {pkt['client_id']} | speed={pkt['speed']:.1f}")
+
+      # Threshold alert
+      if pkt["fuel"] < 10:
+          print(f"LOW FUEL: client {pkt['client_id']}")
+
+      # Aggregate (use the module-level store dict)
+      # store is already updated before on_packet is called
+      # so store[pkt["client_id"]] always holds the latest reading
+
+      # Write to file / database
+      # with open("log.csv", "a") as f:
+      #     f.write(f"{pkt['client_id']},{pkt['speed']}\n")
+
+
+STEP 4 — CLIENT: write init_state() and get_readings()
+
+  def init_state(client_id: int) -> dict:
+      # Return a dict of any values that CHANGE over time.
+      # This dict is passed to get_readings() on every iteration
+      # so you can mutate it in place (e.g. draining fuel, drifting GPS).
+      return {
+          "lat":  28.6 + random.uniform(-0.5, 0.5),
+          "fuel": 100.0,
+      }
+
+  def get_readings(client_id: int, seq: int, state: dict) -> dict:
+      # Mutate state for evolving values
+      state["lat"]  += random.uniform(-0.001, 0.001)
+      state["fuel"]  = max(0, state["fuel"] - 0.3)
+
+      # Return a dict with a key for EVERY field in PACKET_FIELDS
+      # except client_id and seq (added automatically by run_client).
+      return {
+          "latitude": state["lat"],
+          "speed":    random.uniform(0, 120),
+          "fuel":     state["fuel"],
+      }
+
+
+STEP 5 — CONFIGURE AND RUN
+
+  In udp_server_template.py:   set HOST and PORT if needed
+  In udp_client_template.py:   set SERVER = ("host", port) and SEND_INTERVAL
+  In run_clients_template.py:  set CLIENT_IDS = [1, 2, 3, ...]
+
+  Terminal 1:   python udp_server_template.py
+  Terminal 2:   python run_clients_template.py
+  Single client: python udp_client_template.py <id>
+
+
+================================================================
+PACKET SIZE CALCULATOR
+================================================================
+
+Total bytes = 1 (endian prefix, not counted) + sum of each field:
+
+  B  = 1 byte
+  H  = 2 bytes
+  I  = 4 bytes
+  f  = 4 bytes
+  d  = 8 bytes
+  i  = 4 bytes
+  h  = 2 bytes
+  b  = 1 byte
+
+Example — vehicle telemetry:
+  client_id  I = 4
+  seq        I = 4
+  latitude   f = 4
+  longitude  f = 4
+  speed      f = 4
+  fuel       f = 4
+  engine_temp H = 2
+  TOTAL        = 26 bytes
+
+The template prints the computed size at startup so you can verify.
+
+
+================================================================
+STRUCT FORMAT QUICK REFERENCE
+================================================================
+
+Always prefix with "!" (network byte order / big-endian).
+This guarantees consistent decoding across different machines.
+
+  "!IIff"   = uint32, uint32, float32, float32
+  "!IIfH"   = uint32, uint32, float32, uint16
+
+Python struct docs: https://docs.python.org/3/library/struct.html
+
+
+================================================================
+QUESTION PATTERN RECOGNITION
+================================================================
+
+Any question that matches this shape uses this template:
+
+  "Multiple [CLIENTS] periodically transmit [DATA] to a central
+   [SERVER]. The server maintains a real-time view of the latest
+   [DATA] from each [CLIENT]."
+
+Substitute:
+  CLIENTS → buses, vehicles, sensors, drones, weather stations,
+             IoT devices, robots, aircraft, ships, etc.
+  DATA    → GPS, speed, temperature, fuel, pressure, humidity,
+             battery, status flags, counts, etc.
+  SERVER  → fleet manager, control centre, dashboard, aggregator
+
+
+IDENTIFYING YOUR FIELDS
+  Look for nouns that are measured or reported:
+    "current GPS location"       → latitude (f), longitude (f)
+    "speed"                      → speed (f)
+    "fuel level"                 → fuel (f)
+    "engine temperature"         → engine_temp (H)
+    "number of passengers"       → passengers (H)
+    "vehicle status (door/engine)"→ status (B) — use bit flags
+    "battery percentage"         → battery (f) or (B)
+    "altitude"                   → altitude (f)
+    "heading"                    → heading (H) — degrees 0-359
+    "route ID"                   → route_id (B) or (H)
+
+IDENTIFYING on_packet() LOGIC
+  Look for server responsibilities described in the question:
+    "maintain a real-time view"      → update store, print summary
+    "timestamp each packet"          → _ts already added automatically
+    "alert if threshold exceeded"    → if pkt["x"] > N: print/log alert
+    "log to file"                    → open csv, write row
+    "count packets per client"       → maintain a counter dict
+
+
+================================================================
+COMMON MISTAKES
+================================================================
+
+1. PACKET_FIELDS out of sync between server and client
+   Fix: copy-paste the list; edit in one place then sync.
+
+2. Missing field in get_readings() return dict
+   Fix: struct.pack will raise struct.error — check the traceback,
+   it will name the missing key.
+
+3. Forgot to return state changes in get_readings()
+   Fix: mutate state["x"] IN PLACE; do not rebind state itself.
+
+4. PORT already in use
+   Fix: change PORT in both files, or kill the existing process:
+     lsof -i :9999   then   kill <PID>
+
+5. Client connects before server is ready
+   Fix: always start the server terminal first.
+
+6. Packet size mismatch (server SIZE != client SIZE)
+   Symptom: server prints "malformed packet" for every datagram.
+   Fix: PACKET_FIELDS must be identical in both files.
+
+
+================================================================
+UDP RELIABILITY — STRATEGIES TO MENTION IN ANSWERS
+================================================================
+
+Issue               Strategy
+------------------  ------------------------------------------------
+Packet loss         Redundancy burst: send each packet 2-3 times.
+                    Server's seq guard deduplicates automatically.
+
+Out-of-order        Seq guard: discard if seq <= last accepted seq.
+                    Already implemented in the template.
+
+No ACK              For critical events: retransmit until a 1-byte
+                    ACK datagram is received back from server.
+
+Stale detection     Track last_seen (_ts). Alert if silent > N secs.
+
+Clock drift         Embed client timestamp; server computes delta.
+                    Flag if abs(server_ts - client_ts) > threshold.
+
+Buffer overflow     Increase SO_RCVBUF. Move recvfrom to its own
+                    thread so the buffer drains as fast as possible.
+
+================================================================
